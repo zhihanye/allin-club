@@ -4,7 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<title>德州扑克胜率计算器</title>
+<title>All-in CLUB</title>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <style>
   :root{
     --bg:#0d1117; --panel:#161b22; --panel2:#1f2630; --line:#30363d;
@@ -48,7 +50,7 @@
   }
   .btn:active{background:#2a3340;}
   .btn-sm{padding:4px 9px; font-size:12px;}
-  .row-actions{display:flex; gap:8px; margin-top:6px;}
+  .row-actions{display:flex; gap:8px; margin-top:6px; flex-wrap:wrap;}
   .calc-bar{
     position:fixed; left:0; right:0; bottom:0; padding:12px 14px; background:linear-gradient(transparent,var(--bg) 30%);
     display:flex; gap:10px; max-width:640px; margin:0 auto;
@@ -72,46 +74,181 @@
   .pcard.used{opacity:.25; pointer-events:none;}
   .pcard.red{color:#ff6b6b;}
   .picker-foot{display:flex; gap:10px; margin-top:8px;}
-  select,input[type=number]{background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px; font-size:13px;}
+  select,input[type=number],input[type=text],input[type=date]{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px; font-size:14px;
+  }
+  /* tabs */
+  .tabs{display:flex; gap:6px; background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:4px; margin-bottom:14px;}
+  .tab{flex:1; text-align:center; padding:9px; border-radius:7px; font-size:14px; color:var(--muted); cursor:pointer; font-weight:600;}
+  .tab.active{background:var(--accent); color:#fff;}
+  .tab-mini{flex:0 0 auto; padding-left:14px; padding-right:14px; font-size:13px;}
+  .hidden{display:none !important;}
+  /* bottom nav */
+  .bottomnav{position:fixed; left:0; right:0; bottom:0; max-width:640px; margin:0 auto;
+    display:flex; background:var(--panel); border-top:1px solid var(--line); z-index:40;}
+  .navitem{flex:1; background:none; border:none; color:var(--muted); font-size:11px; cursor:pointer;
+    padding:8px 4px calc(8px + env(safe-area-inset-bottom)); display:flex; flex-direction:column; align-items:center; gap:3px;}
+  .navitem .ic{font-size:21px; line-height:1;}
+  .navitem.active{color:var(--accent);}
+  .navitem:active{background:#1c222b;}
+  /* ledger */
+  .led-head{display:flex; align-items:center; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  .led-head label{font-size:12px; color:var(--muted);}
+  .perhand-in{width:70px;}
+  .ltable{width:100%; border-collapse:collapse;}
+  .ltable th{font-size:11px; color:var(--muted); font-weight:500; padding:4px 3px; text-align:center; border-bottom:1px solid var(--line);}
+  .ltable td{padding:6px 3px; text-align:center; border-bottom:1px solid #21262d;}
+  .ltable td.name{text-align:left; font-size:14px; max-width:78px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+  .num-in{width:54px; text-align:center; padding:5px 2px;}
+  .step{display:inline-flex; align-items:center; gap:3px;}
+  .step button{width:24px; height:28px; border-radius:6px; border:1px solid var(--line); background:var(--panel2); color:var(--text); font-size:16px; line-height:1; cursor:pointer;}
+  .buyin-in{cursor:pointer; background:var(--panel2);}
+  .preset-chip{flex:1 0 28%; font-size:16px; padding:12px 0; text-align:center;}
+  .preset-chip.sel{background:var(--accent); color:#fff; border-color:var(--accent);}
+  .net{font-weight:700; font-size:14px;}
+  .net.pos{color:var(--green);} .net.neg{color:var(--red);}
+  .xbtn{background:none; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:2px 4px;}
+  .totals{display:flex; justify-content:space-between; margin-top:10px; font-size:13px; flex-wrap:wrap; gap:6px;}
+  .totals b{color:var(--text);}
+  .balance-ok{color:var(--green);} .balance-bad{color:var(--red);}
+  .add-row{display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; align-items:center;}
+  .add-row select{flex:1; min-width:120px;}
+  .chip{display:inline-flex; align-items:center; gap:5px; background:var(--panel2); border:1px solid var(--line); border-radius:14px; padding:4px 8px 4px 11px; font-size:13px; margin:0 6px 6px 0;}
+  .chip .xbtn{font-size:14px;}
+  .roster-wrap{display:flex; flex-wrap:wrap;}
+  .hist-item{border:1px solid var(--line); border-radius:9px; padding:10px; margin-bottom:8px;}
+  .hist-head{display:flex; justify-content:space-between; align-items:center; cursor:pointer;}
+  .hist-head .d{font-size:14px; font-weight:600;}
+  .hist-head .s{font-size:12px; color:var(--muted);}
+  .hist-detail{margin-top:8px; font-size:13px;}
+  .hist-detail .hrow{display:flex; justify-content:space-between; padding:3px 0; border-top:1px solid #21262d;}
+  .empty-hint{font-size:13px; color:var(--muted); text-align:center; padding:10px;}
 </style>
 </head>
 <body>
 
-<h1>德州扑克胜率计算器
-  <small>蒙特卡洛模拟 · 手牌留空 = 随机对手</small>
+<h1>♠️ All-in CLUB
+  <small>牌局记账 · 随手算胜率</small>
 </h1>
 
-<div class="panel">
-  <div class="panel-title"><span>公共牌（可选 · 翻牌前可全部留空）</span></div>
-  <div class="cards-row" id="board"></div>
+<!-- ============ 胜率计算 ============ -->
+<div id="tab-calc" class="hidden">
+  <div class="panel">
+    <div class="panel-title"><span>公共牌（可选 · 翻牌前可全部留空）</span></div>
+    <div class="cards-row" id="board"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>玩家手牌</span></div>
+    <div id="players"></div>
+    <div class="row-actions">
+      <button class="btn btn-sm" id="addPlayer">+ 加玩家</button>
+      <button class="btn btn-sm" id="delPlayer">− 减玩家</button>
+      <button class="btn btn-sm" id="clearAll">清空全部</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>模拟次数</span></div>
+    <div class="cards-row">
+      <select id="iters">
+        <option value="20000">快速 (2万)</option>
+        <option value="100000" selected>标准 (10万)</option>
+        <option value="500000">精确 (50万)</option>
+      </select>
+      <span style="font-size:12px;color:var(--muted)">次数越多越准，但越慢</span>
+    </div>
+  </div>
+
+  <button class="btn-calc" id="calc" style="width:100%; margin-top:4px;">计算胜率</button>
+  <div class="progress" id="progress"></div>
 </div>
 
-<div class="panel">
-  <div class="panel-title"><span>玩家手牌</span></div>
-  <div id="players"></div>
-  <div class="row-actions">
-    <button class="btn btn-sm" id="addPlayer">+ 加玩家</button>
-    <button class="btn btn-sm" id="delPlayer">− 减玩家</button>
-    <button class="btn btn-sm" id="clearAll">清空全部</button>
+<!-- ============ 记账 ============ -->
+<div id="tab-ledger">
+  <div id="connStatus" style="text-align:center; font-size:11px; color:var(--muted); margin-bottom:8px">连接中…</div>
+
+  <div class="panel" id="startPanel">
+    <div class="empty-hint" style="padding:4px 0 14px">现在没有进行中的牌局</div>
+    <button class="btn-calc" id="startGame" style="width:100%">♠️ 开始新牌局</button>
+    <div class="empty-hint" style="margin-top:12px; line-height:1.6">开局后，所有打开本网站的人都能<b style="color:var(--text)">实时看到这桌</b>；<br>只有你（房主）能修改，其他人只能围观。</div>
+  </div>
+
+  <div class="panel hidden" id="gamePanel">
+    <div class="panel-title"><span id="gameTitle">本局记账</span></div>
+    <div id="viewerBanner" class="hidden" style="background:#2a1f12; border:1px solid #5a4a2a; color:#e8c98a; border-radius:8px; padding:8px 10px; font-size:13px; margin-bottom:10px">🔴 房主正在记账，你在围观（只读，不能修改）</div>
+    <div class="led-head">
+      <label>日期</label>
+      <input type="date" id="ledDate">
+      <label>1手 =</label>
+      <input type="number" class="perhand-in" id="perHand" inputmode="numeric" value="100">
+    </div>
+    <table class="ltable">
+      <thead>
+        <tr><th>姓名</th><th>带入(手)</th><th>带出</th><th>输赢</th><th></th></tr>
+      </thead>
+      <tbody id="ledBody"></tbody>
+    </table>
+    <div class="add-row" id="addRow">
+      <select id="addPick"><option value="">＋ 加入玩家…</option></select>
+      <button class="btn btn-sm" id="addNew">临时新人</button>
+    </div>
+    <div class="totals" id="ledTotals"></div>
+    <div class="row-actions" id="hostActions" style="margin-top:12px">
+      <button class="btn" id="saveSession" style="flex:1; background:var(--accent); color:#fff; border:none; font-weight:600;">结束并保存到历史</button>
+      <button class="btn" id="clearSession">取消本局</button>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title"><span>历史记录</span><button class="btn btn-sm" id="clearHist">清空历史</button></div>
+    <div id="histWrap"></div>
   </div>
 </div>
 
-<div class="panel">
-  <div class="panel-title"><span>模拟次数</span></div>
-  <div class="cards-row">
-    <select id="iters">
-      <option value="20000">快速 (2万)</option>
-      <option value="100000" selected>标准 (10万)</option>
-      <option value="500000">精确 (50万)</option>
-    </select>
-    <span style="font-size:12px;color:var(--muted)">次数越多越准，但越慢</span>
+<!-- ============ 常用玩家 ============ -->
+<div id="tab-roster" class="hidden">
+  <div class="panel">
+    <div class="panel-title"><span>常用玩家名单</span></div>
+    <div class="roster-wrap" id="rosterWrap"></div>
+    <div class="add-row">
+      <input type="text" id="newName" placeholder="输入姓名，例如 张三" style="flex:1">
+      <button class="btn btn-sm" id="addRoster">添加</button>
+    </div>
+  </div>
+  <div class="empty-hint">提示：点姓名查看 TA 的累计总账，并可加入牌局或删除</div>
+</div>
+
+<!-- ============ 底部导航 ============ -->
+<nav class="bottomnav">
+  <button class="navitem active" data-tab="ledger"><span class="ic">💰</span>记账</button>
+  <button class="navitem" data-tab="roster"><span class="ic">👥</span>常用玩家</button>
+  <button class="navitem" data-tab="calc"><span class="ic">🎲</span>算胜率</button>
+</nav>
+
+<!-- 常用玩家详情（累计总账 + 操作）-->
+<div class="overlay" id="playerOverlay">
+  <div class="picker">
+    <h3><span id="pdName">玩家</span><button class="btn btn-sm" id="pdClose">关闭</button></h3>
+    <div id="pdBody"></div>
+    <div class="picker-foot" style="flex-direction:column; gap:8px; margin-top:12px">
+      <button class="btn" id="pdDel" style="width:100%; color:var(--red); border-color:var(--red)">删除该常用玩家</button>
+    </div>
   </div>
 </div>
 
-<div class="progress" id="progress"></div>
-
-<div class="calc-bar">
-  <button class="btn-calc" id="calc">计算胜率</button>
+<!-- 带入手数选择 -->
+<div class="overlay" id="buyinOverlay">
+  <div class="picker">
+    <h3><span id="buyinTitle">带入手数</span><button class="btn btn-sm" id="buyinClose">关闭</button></h3>
+    <div class="add-row" style="flex-wrap:wrap" id="buyinPresets"></div>
+    <div class="add-row" style="margin-top:10px; align-items:center">
+      <label style="font-size:13px;color:var(--muted)">自定义</label>
+      <input type="number" id="buyinCustom" inputmode="numeric" min="0" style="width:90px; text-align:center">
+      <span style="font-size:13px;color:var(--muted)">手</span>
+      <button class="btn" id="buyinOk" style="margin-left:auto; background:var(--accent); color:#fff; border:none">确定</button>
+    </div>
+  </div>
 </div>
 
 <!-- card picker -->
@@ -127,7 +264,9 @@
 
 <script>
 "use strict";
-// ---------- 常量 ----------
+/* =========================================================
+   一、胜率计算
+   ========================================================= */
 const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
 const RANK_VAL = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14};
 const SUITS = [
@@ -136,47 +275,34 @@ const SUITS = [
   {ch:'♦', name:'方块', color:'red'},
   {ch:'♣', name:'梅花', color:'black'},
 ];
-// 一张牌用整数 0..51 表示：rankIndex*4 + suitIndex
 function cardId(ri, si){ return ri*4 + si; }
 function cardRankVal(id){ return RANK_VAL[RANKS[Math.floor(id/4)]]; }
 function cardSuit(id){ return id % 4; }
-function cardLabel(id){ return RANKS[Math.floor(id/4)]; }
 
-// ---------- 状态 ----------
-// board: 5 个槽位; players: 每人 2 个槽位。null 表示空
 let board = [null,null,null,null,null];
 let players = [ [null,null], [null,null] ];
 const BOARD_LABELS = ['翻牌','翻牌','翻牌','转牌','河牌'];
 
-// ---------- 渲染 ----------
 function renderCardSlot(id, onClick){
   const el = document.createElement('div');
-  if(id===null){
-    el.className='card empty'; el.textContent='+';
-  }else{
+  if(id===null){ el.className='card empty'; el.textContent='+'; }
+  else{
     const ri=Math.floor(id/4), si=id%4;
     el.className='card '+SUITS[si].color;
     el.innerHTML=`<span class="rank">${RANKS[ri]}</span><span class="suit">${SUITS[si].ch}</span>`;
   }
-  el.onclick=onClick;
-  return el;
+  el.onclick=onClick; return el;
 }
-
 function renderBoard(){
   const wrap=document.getElementById('board'); wrap.innerHTML='';
   for(let i=0;i<5;i++){
     const slot=renderCardSlot(board[i], ()=>openPicker('board',i));
-    const box=document.createElement('div');
-    box.style.textAlign='center';
-    box.appendChild(slot);
+    const box=document.createElement('div'); box.style.textAlign='center'; box.appendChild(slot);
     const lbl=document.createElement('div');
     lbl.style.fontSize='10px'; lbl.style.color='var(--muted)'; lbl.style.marginTop='3px';
-    lbl.textContent=BOARD_LABELS[i];
-    box.appendChild(lbl);
-    wrap.appendChild(box);
+    lbl.textContent=BOARD_LABELS[i]; box.appendChild(lbl); wrap.appendChild(box);
   }
 }
-
 function renderPlayers(results){
   const wrap=document.getElementById('players'); wrap.innerHTML='';
   players.forEach((hand,pi)=>{
@@ -184,13 +310,10 @@ function renderPlayers(results){
     const name=document.createElement('div'); name.className='pname'; name.textContent='玩家 '+(pi+1);
     row.appendChild(name);
     const holes=document.createElement('div'); holes.className='holes';
-    for(let h=0;h<2;h++){
-      holes.appendChild(renderCardSlot(hand[h], ()=>openPicker('player',pi,h)));
-    }
+    for(let h=0;h<2;h++) holes.appendChild(renderCardSlot(hand[h], ()=>openPicker('player',pi,h)));
     row.appendChild(holes);
     if(results && results[pi]){
-      const r=results[pi];
-      const res=document.createElement('div'); res.className='res';
+      const r=results[pi]; const res=document.createElement('div'); res.className='res';
       res.innerHTML=`<div class="eq">${r.equity}%</div>
         <div class="sub">胜 ${r.win}% · 平 ${r.tie}%</div>
         <div class="barwrap"><div class="bar" style="width:${r.equity}%"></div></div>`;
@@ -200,10 +323,8 @@ function renderPlayers(results){
     wrap.appendChild(row);
   });
 }
-
 function renderAll(results){ renderBoard(); renderPlayers(results); }
 
-// ---------- 已用牌集合 ----------
 function usedSet(){
   const s=new Set();
   board.forEach(c=>{ if(c!==null) s.add(c); });
@@ -211,24 +332,18 @@ function usedSet(){
   return s;
 }
 
-// ---------- 选牌器 ----------
-let pickerTarget=null; // {type:'board'|'player', idx, sub}
+let pickerTarget=null;
 function openPicker(type, idx, sub){
   pickerTarget={type,idx,sub};
   const used=usedSet();
-  // 当前槽位已选的牌不算"被占用"
-  let cur=null;
-  if(type==='board') cur=board[idx];
-  else cur=players[idx][sub];
+  let cur = type==='board' ? board[idx] : players[idx][sub];
   if(cur!==null) used.delete(cur);
-
-  document.getElementById('pickerTitle').textContent =
-    type==='board' ? '选择公共牌' : `玩家 ${idx+1} 的手牌`;
+  document.getElementById('pickerTitle').textContent = type==='board' ? '选择公共牌' : `玩家 ${idx+1} 的手牌`;
   const body=document.getElementById('pickerBody'); body.innerHTML='';
   SUITS.forEach((su,si)=>{
     const g=document.createElement('div'); g.className='suit-group';
     const lab=document.createElement('div'); lab.className='suit-label';
-    lab.innerHTML=`<span class="${su.color==='red'?'':''}" style="color:${su.color==='red'?'#ff6b6b':'#e6edf3'}">${su.ch} ${su.name}</span>`;
+    lab.innerHTML=`<span style="color:${su.color==='red'?'#ff6b6b':'#e6edf3'}">${su.ch} ${su.name}</span>`;
     g.appendChild(lab);
     const grid=document.createElement('div'); grid.className='rank-grid';
     for(let ri=RANKS.length-1; ri>=0; ri--){
@@ -236,230 +351,428 @@ function openPicker(type, idx, sub){
       const c=document.createElement('div');
       c.className='pcard '+su.color+(used.has(id)?' used':'');
       c.innerHTML=`${RANKS[ri]}<span style="font-size:12px;margin-left:1px">${su.ch}</span>`;
-      c.onclick=()=>chooseCard(id);
-      grid.appendChild(c);
+      c.onclick=()=>chooseCard(id); grid.appendChild(c);
     }
-    g.appendChild(grid);
-    body.appendChild(g);
+    g.appendChild(grid); body.appendChild(g);
   });
   document.getElementById('overlay').classList.add('show');
 }
 function chooseCard(id){
   const t=pickerTarget;
-  if(t.type==='board') board[t.idx]=id;
-  else players[t.idx][t.sub]=id;
+  if(t.type==='board') board[t.idx]=id; else players[t.idx][t.sub]=id;
   closePicker(); renderAll();
 }
 function clearCurrentCard(){
   const t=pickerTarget; if(!t) return;
-  if(t.type==='board') board[t.idx]=null;
-  else players[t.idx][t.sub]=null;
+  if(t.type==='board') board[t.idx]=null; else players[t.idx][t.sub]=null;
   closePicker(); renderAll();
 }
 function closePicker(){ document.getElementById('overlay').classList.remove('show'); pickerTarget=null; }
 
-// ---------- 7 张牌评估器 ----------
-// 返回可比较的数值分数：category 在最高位，后接 tiebreaker
 function straightHigh(rankSet){
-  // rankSet: Set of rank values (2..14)。返回顺子最大牌点，没有则 0
-  // A 可作 1（轮子 A2345）
-  const s=new Set(rankSet);
-  if(s.has(14)) s.add(1);
-  for(let hi=14; hi>=5; hi--){
-    let ok=true;
-    for(let k=0;k<5;k++){ if(!s.has(hi-k)){ ok=false; break; } }
-    if(ok) return hi;
-  }
+  const s=new Set(rankSet); if(s.has(14)) s.add(1);
+  for(let hi=14; hi>=5; hi--){ let ok=true;
+    for(let k=0;k<5;k++){ if(!s.has(hi-k)){ ok=false; break; } } if(ok) return hi; }
   return 0;
 }
-// 把分类和最多5个 tiebreaker 打包成一个数（每段用 16 进制位，足够 0..15）
-function pack(cat, t){
-  let v=cat;
-  for(let i=0;i<5;i++){ v = v*16 + (t[i]||0); }
-  return v;
-}
+function pack(cat, t){ let v=cat; for(let i=0;i<5;i++){ v=v*16+(t[i]||0); } return v; }
 function evaluate7(cards){
-  // cards: 7 个 card id
-  const cnt={};            // rank -> 数量
-  const suitCount=[0,0,0,0];
-  const suitRanks=[[],[],[],[]];
-  const allRanks=[];
+  const cnt={}; const suitCount=[0,0,0,0]; const suitRanks=[[],[],[],[]]; const allRanks=[];
   for(const id of cards){
     const rv=cardRankVal(id), su=cardSuit(id);
-    cnt[rv]=(cnt[rv]||0)+1;
-    suitCount[su]++; suitRanks[su].push(rv);
-    allRanks.push(rv);
+    cnt[rv]=(cnt[rv]||0)+1; suitCount[su]++; suitRanks[su].push(rv); allRanks.push(rv);
   }
-  // 同花
-  let flushSuit=-1;
-  for(let i=0;i<4;i++) if(suitCount[i]>=5) flushSuit=i;
-  // 同花顺
-  if(flushSuit>=0){
-    const sh=straightHigh(new Set(suitRanks[flushSuit]));
-    if(sh) return pack(8,[sh]);
-  }
-  // 按 数量, 点数 排序的分组
+  let flushSuit=-1; for(let i=0;i<4;i++) if(suitCount[i]>=5) flushSuit=i;
+  if(flushSuit>=0){ const sh=straightHigh(new Set(suitRanks[flushSuit])); if(sh) return pack(8,[sh]); }
   const groups=Object.keys(cnt).map(r=>({r:+r,c:cnt[r]}));
   groups.sort((a,b)=> b.c-a.c || b.r-a.r);
   const rankDesc=[...new Set(allRanks)].sort((a,b)=>b-a);
-
-  // 四条
-  if(groups[0].c===4){
-    const quad=groups[0].r;
-    const kicker=Math.max(...allRanks.filter(r=>r!==quad));
-    return pack(7,[quad,kicker]);
-  }
-  // 葫芦（三条 + 对子/另一组三条）
-  if(groups[0].c===3 && groups.length>1 && groups[1].c>=2){
-    return pack(6,[groups[0].r, groups[1].r]);
-  }
-  // 同花
-  if(flushSuit>=0){
-    const top=[...suitRanks[flushSuit]].sort((a,b)=>b-a).slice(0,5);
-    return pack(5,top);
-  }
-  // 顺子
-  const sh=straightHigh(new Set(allRanks));
-  if(sh) return pack(4,[sh]);
-  // 三条
-  if(groups[0].c===3){
-    const t=groups[0].r;
-    const ks=rankDesc.filter(r=>r!==t).slice(0,2);
-    return pack(3,[t,ks[0],ks[1]]);
-  }
-  // 两对
+  if(groups[0].c===4){ const quad=groups[0].r; const kicker=Math.max(...allRanks.filter(r=>r!==quad)); return pack(7,[quad,kicker]); }
+  if(groups[0].c===3 && groups.length>1 && groups[1].c>=2) return pack(6,[groups[0].r, groups[1].r]);
+  if(flushSuit>=0){ const top=[...suitRanks[flushSuit]].sort((a,b)=>b-a).slice(0,5); return pack(5,top); }
+  const sh=straightHigh(new Set(allRanks)); if(sh) return pack(4,[sh]);
+  if(groups[0].c===3){ const t=groups[0].r; const ks=rankDesc.filter(r=>r!==t).slice(0,2); return pack(3,[t,ks[0],ks[1]]); }
   if(groups[0].c===2 && groups.length>1 && groups[1].c===2){
-    const p1=groups[0].r, p2=groups[1].r;
-    const k=Math.max(...rankDesc.filter(r=>r!==p1 && r!==p2));
-    return pack(2,[p1,p2,k]);
-  }
-  // 一对
-  if(groups[0].c===2){
-    const p=groups[0].r;
-    const ks=rankDesc.filter(r=>r!==p).slice(0,3);
-    return pack(1,[p,ks[0],ks[1],ks[2]]);
-  }
-  // 高牌
+    const p1=groups[0].r, p2=groups[1].r; const k=Math.max(...rankDesc.filter(r=>r!==p1 && r!==p2)); return pack(2,[p1,p2,k]); }
+  if(groups[0].c===2){ const p=groups[0].r; const ks=rankDesc.filter(r=>r!==p).slice(0,3); return pack(1,[p,ks[0],ks[1],ks[2]]); }
   return pack(0, rankDesc.slice(0,5));
 }
 
-// ---------- 蒙特卡洛模拟 ----------
 function simulate(iters, onDone){
   const used=usedSet();
   const knownBoard=board.filter(c=>c!==null);
-  // 剩余牌堆
-  const deck=[];
-  for(let id=0; id<52; id++) if(!used.has(id)) deck.push(id);
+  const deck=[]; for(let id=0; id<52; id++) if(!used.has(id)) deck.push(id);
   const np=players.length;
-  // 需要随机发的：每个玩家空槽 + 公共牌补到5
   const playerEmpty=players.map(h=>h.filter(c=>c===null).length);
   const boardNeed=5-knownBoard.length;
   let totalNeed=boardNeed; playerEmpty.forEach(n=>totalNeed+=n);
   if(totalNeed>deck.length){ alert('牌不够用了，请检查输入'); return; }
-
-  const wins=new Array(np).fill(0);
-  const ties=new Array(np).fill(0);   // 平局时给每个并列者 +1/并列人数
-  const equityTie=new Array(np).fill(0);
-  const sevens=new Array(np); // 复用数组
-  for(let i=0;i<np;i++) sevens[i]=new Array(7);
-
-  const dlen=deck.length;
-  let done=0;
-  const BATCH=4000;
-
+  const wins=new Array(np).fill(0); const ties=new Array(np).fill(0); const equityTie=new Array(np).fill(0);
+  const sevens=new Array(np); for(let i=0;i<np;i++) sevens[i]=new Array(7);
+  const dlen=deck.length; let done=0; const BATCH=4000;
   function runBatch(){
     const end=Math.min(done+BATCH, iters);
     for(let it=done; it<end; it++){
-      // 部分 Fisher-Yates：抽 totalNeed 张
-      for(let k=0;k<totalNeed;k++){
-        const j=k+Math.floor(Math.random()*(dlen-k));
-        const tmp=deck[k]; deck[k]=deck[j]; deck[j]=tmp;
-      }
+      for(let k=0;k<totalNeed;k++){ const j=k+Math.floor(Math.random()*(dlen-k)); const tmp=deck[k]; deck[k]=deck[j]; deck[j]=tmp; }
       let drawIdx=0;
-      // 完整公共牌
       const fullBoard=new Array(5);
       for(let b=0;b<knownBoard.length;b++) fullBoard[b]=knownBoard[b];
       for(let b=knownBoard.length;b<5;b++) fullBoard[b]=deck[drawIdx++];
-      // 每个玩家 7 张并评估
       let bestScore=-1;
       for(let p=0;p<np;p++){
-        const h=players[p];
-        const sv=sevens[p];
-        let hi=0;
+        const h=players[p]; const sv=sevens[p];
         for(let c=0;c<2;c++){ sv[c] = h[c]!==null ? h[c] : deck[drawIdx++]; }
         for(let b=0;b<5;b++) sv[2+b]=fullBoard[b];
-        const sc=evaluate7(sv);
-        sv.score=sc;
-        if(sc>bestScore) bestScore=sc;
+        const sc=evaluate7(sv); sv.score=sc; if(sc>bestScore) bestScore=sc;
       }
-      // 统计赢家
-      let winners=0;
-      for(let p=0;p<np;p++) if(sevens[p].score===bestScore) winners++;
-      if(winners===1){
-        for(let p=0;p<np;p++) if(sevens[p].score===bestScore){ wins[p]++; equityTie[p]+=1; }
-      }else{
-        const share=1/winners;
-        for(let p=0;p<np;p++) if(sevens[p].score===bestScore){ ties[p]++; equityTie[p]+=share; }
-      }
+      let winners=0; for(let p=0;p<np;p++) if(sevens[p].score===bestScore) winners++;
+      if(winners===1){ for(let p=0;p<np;p++) if(sevens[p].score===bestScore){ wins[p]++; equityTie[p]+=1; } }
+      else{ const share=1/winners; for(let p=0;p<np;p++) if(sevens[p].score===bestScore){ ties[p]++; equityTie[p]+=share; } }
     }
     done=end;
-    document.getElementById('progress').textContent=
-      `模拟中… ${Math.round(done/iters*100)}%`;
+    document.getElementById('progress').textContent=`模拟中… ${Math.round(done/iters*100)}%`;
     if(done<iters){ setTimeout(runBatch, 0); }
     else{
-      const results=[];
-      let maxEq=-1;
+      const results=[]; let maxEq=-1;
       for(let p=0;p<np;p++){
-        const eq=equityTie[p]/iters*100;
-        if(eq>maxEq) maxEq=eq;
-        results.push({
-          win:(wins[p]/iters*100).toFixed(1),
-          tie:(ties[p]/iters*100).toFixed(1),
-          equity:eq.toFixed(1),
-          eqNum:eq
-        });
+        const eq=equityTie[p]/iters*100; if(eq>maxEq) maxEq=eq;
+        results.push({ win:(wins[p]/iters*100).toFixed(1), tie:(ties[p]/iters*100).toFixed(1), equity:eq.toFixed(1), eqNum:eq });
       }
-      results.forEach(r=> r.best = (Math.abs(r.eqNum-maxEq)<1e-9));
+      results.forEach(r=> r.best=(Math.abs(r.eqNum-maxEq)<1e-9));
       onDone(results);
     }
   }
   runBatch();
 }
 
-// ---------- 事件 ----------
 document.getElementById('calc').onclick=()=>{
-  // 校验：每个玩家要么 2 张都填，要么都空（随机）。允许只填一张吗？允许，另一张随机
   const iters=+document.getElementById('iters').value;
-  const btn=document.getElementById('calc');
-  btn.disabled=true; btn.textContent='计算中…';
-  setTimeout(()=>{
-    simulate(iters,(results)=>{
-      renderPlayers(results);
-      btn.disabled=false; btn.textContent='计算胜率';
-      document.getElementById('progress').textContent='完成 ✓ （共 '+iters.toLocaleString()+' 次模拟）';
-    });
-  },30);
+  const btn=document.getElementById('calc'); btn.disabled=true; btn.textContent='计算中…';
+  setTimeout(()=>{ simulate(iters,(results)=>{
+    renderPlayers(results); btn.disabled=false; btn.textContent='计算胜率';
+    document.getElementById('progress').textContent='完成 ✓ （共 '+iters.toLocaleString()+' 次模拟）';
+  }); },30);
 };
-document.getElementById('addPlayer').onclick=()=>{
-  if(players.length>=9){ alert('最多 9 个玩家'); return; }
-  players.push([null,null]); renderPlayers();
-};
-document.getElementById('delPlayer').onclick=()=>{
-  if(players.length<=2){ alert('至少 2 个玩家'); return; }
-  players.pop(); renderPlayers();
-};
-document.getElementById('clearAll').onclick=()=>{
-  board=[null,null,null,null,null];
-  players=players.map(()=>[null,null]);
-  document.getElementById('progress').textContent='';
-  renderAll();
-};
+document.getElementById('addPlayer').onclick=()=>{ if(players.length>=9){ alert('最多 9 个玩家'); return; } players.push([null,null]); renderPlayers(); };
+document.getElementById('delPlayer').onclick=()=>{ if(players.length<=2){ alert('至少 2 个玩家'); return; } players.pop(); renderPlayers(); };
+document.getElementById('clearAll').onclick=()=>{ board=[null,null,null,null,null]; players=players.map(()=>[null,null]); document.getElementById('progress').textContent=''; renderAll(); };
 document.getElementById('pickerClose').onclick=closePicker;
 document.getElementById('pickerClear').onclick=clearCurrentCard;
 document.getElementById('overlay').onclick=(e)=>{ if(e.target.id==='overlay') closePicker(); };
-
-// init
 renderAll();
+
+/* =========================================================
+   二、记账（Firebase 实时共享 · 全组共用一桌）
+   ========================================================= */
+const firebaseConfig = {
+  apiKey: "AIzaSyCFgpsgPBh4FfW6jTk7MTyq_BR7HgpnCVM",
+  authDomain: "allin-club-7ec7b.firebaseapp.com",
+  databaseURL: "https://allin-club-7ec7b-default-rtdb.firebaseio.com",
+  projectId: "allin-club-7ec7b",
+  storageBucket: "allin-club-7ec7b.firebasestorage.app",
+  messagingSenderId: "431836952700",
+  appId: "1:431836952700:web:30998f98bfa01ea67a71f9"
+};
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+const gameRef = db.ref('game'), rosterRef = db.ref('roster'), sessionsRef = db.ref('sessions');
+
+// 本设备身份（判断是不是房主）
+let myId = localStorage.getItem('poker_myid');
+if(!myId){ myId='u'+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('poker_myid', myId); }
+
+let roster = [];
+let sessions = [];
+let game = null;            // 当前共享牌局；null=无
+
+function todayStr(){ const d=new Date(); const p=n=>String(n).padStart(2,'0'); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
+function fmt(n){ if(n===''||n==null||isNaN(n)) return '0'; return String(Math.round(n*100)/100); }
+function escapeHtml(s){ return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+function lastPerHand(){ return Number(localStorage.getItem('poker_perhand'))||100; }
+
+function gameMode(){ return !game ? 'start' : (game.ownerId===myId ? 'host' : 'viewer'); }
+function isHost(){ return gameMode()==='host'; }
+
+let saveTimer=null;
+function gameSave(immediate){
+  if(!game) return;
+  game.updatedAt=Date.now();
+  if(immediate){ if(saveTimer){clearTimeout(saveTimer);saveTimer=null;} gameRef.set(game); return; }
+  clearTimeout(saveTimer); saveTimer=setTimeout(()=>{ if(game) gameRef.set(game); saveTimer=null; }, 300);
+}
+
+function playerBuyIn(p){ return (Number(p.buyInHands)||0) * (Number(game.perHand)||0); }
+function playerNet(p){ return (Number(p.cashOut)||0) - playerBuyIn(p); }
+
+// ---- 当前牌局渲染（start / host / viewer 三态）----
+function renderLedger(){
+  const mode=gameMode();
+  document.getElementById('startPanel').classList.toggle('hidden', mode!=='start');
+  document.getElementById('gamePanel').classList.toggle('hidden', mode==='start');
+  if(mode==='start') return;
+  const host=(mode==='host');
+  document.getElementById('viewerBanner').classList.toggle('hidden', host);
+  document.getElementById('addRow').classList.toggle('hidden', !host);
+  document.getElementById('hostActions').classList.toggle('hidden', !host);
+  document.getElementById('gameTitle').textContent = host ? '本局记账（你是房主）' : '牌局围观（只读）';
+  const d=document.getElementById('ledDate'), ph=document.getElementById('perHand');
+  d.value=game.date||''; ph.value=game.perHand; d.disabled=!host; ph.disabled=!host;
+  const tb=document.getElementById('ledBody'); tb.innerHTML='';
+  (game.players||[]).forEach((p,i)=>{
+    const tr=document.createElement('tr');
+    if(host){
+      tr.innerHTML=`
+        <td class="name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+        <td><span class="step">
+          <button data-act="dec" data-i="${i}">−</button>
+          <input class="num-in buyin-in" type="number" inputmode="numeric" data-act="buyin" data-i="${i}" value="${p.buyInHands}" readonly>
+          <button data-act="inc" data-i="${i}">＋</button>
+        </span></td>
+        <td><input class="num-in" type="number" inputmode="numeric" data-f="cashOut" data-i="${i}" value="${(p.cashOut===''||p.cashOut==null)?'':p.cashOut}" placeholder="—"></td>
+        <td><span class="net" id="net-${i}"></span></td>
+        <td><button class="xbtn" data-act="del" data-i="${i}">✕</button></td>`;
+    } else {
+      tr.innerHTML=`
+        <td class="name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+        <td>${p.buyInHands} 手</td>
+        <td>${(p.cashOut===''||p.cashOut==null)?'—':fmt(p.cashOut)}</td>
+        <td><span class="net" id="net-${i}"></span></td>
+        <td></td>`;
+    }
+    tb.appendChild(tr);
+  });
+  updateAllNets();
+  if(host) renderAddPick();
+}
+function updateAllNets(){
+  if(!game) return;
+  let sumBuy=0, sumOut=0;
+  (game.players||[]).forEach((p,i)=>{
+    const net=playerNet(p); sumBuy+=playerBuyIn(p); sumOut+=(Number(p.cashOut)||0);
+    const el=document.getElementById('net-'+i); if(!el) return;
+    el.textContent=(net>0?'+':'')+fmt(net);
+    el.className='net '+(net>0?'pos':net<0?'neg':'');
+  });
+  const diff=sumOut-sumBuy;
+  const t=document.getElementById('ledTotals');
+  let bal = Math.abs(diff)<1e-9
+    ? `<span class="balance-ok">✓ 平账</span>`
+    : `<span class="balance-bad">✗ 差额 ${(diff>0?'+':'')+fmt(diff)}</span>`;
+  t.innerHTML=`<span>总带入 <b>${fmt(sumBuy)}</b></span><span>总带出 <b>${fmt(sumOut)}</b></span><span>${bal}</span>`;
+}
+function renderAddPick(){
+  const sel=document.getElementById('addPick');
+  const inGame=new Set((game.players||[]).map(p=>p.name));
+  let html='<option value="">＋ 从常用玩家加入…</option>';
+  roster.filter(n=>!inGame.has(n)).forEach(n=>{ html+=`<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`; });
+  sel.innerHTML=html;
+}
+
+function addPlayerToGame(name){
+  if(!isHost()) return;
+  name=(name||'').trim(); if(!name) return;
+  game.players=game.players||[];
+  if(game.players.some(p=>p.name===name)){ alert('该玩家已在本局'); return; }
+  game.players.push({name, buyInHands:1, cashOut:''});
+  gameSave(true); renderLedger();
+}
+
+// 带入手数选择面板（仅房主）
+let buyinIdx=null;
+const BUYIN_PRESETS=[1,2,3,4,5,10];
+function openBuyin(i){
+  if(!isHost()) return;
+  buyinIdx=i; const p=game.players[i];
+  document.getElementById('buyinTitle').textContent=p.name+' · 带入手数';
+  const wrap=document.getElementById('buyinPresets'); wrap.innerHTML='';
+  BUYIN_PRESETS.forEach(v=>{
+    const b=document.createElement('button'); b.className='btn preset-chip'+((Number(p.buyInHands)||0)===v?' sel':'');
+    b.textContent=v+'手';
+    b.onclick=()=>{ game.players[i].buyInHands=v; gameSave(true); renderLedger(); closeBuyin(); };
+    wrap.appendChild(b);
+  });
+  document.getElementById('buyinCustom').value=p.buyInHands;
+  document.getElementById('buyinOverlay').classList.add('show');
+}
+function closeBuyin(){ document.getElementById('buyinOverlay').classList.remove('show'); buyinIdx=null; }
+document.getElementById('buyinClose').onclick=closeBuyin;
+document.getElementById('buyinOverlay').onclick=e=>{ if(e.target.id==='buyinOverlay') closeBuyin(); };
+document.getElementById('buyinOk').onclick=()=>{
+  if(buyinIdx==null) return;
+  const v=Math.max(0, Number(document.getElementById('buyinCustom').value)||0);
+  game.players[buyinIdx].buyInHands=v; gameSave(true); renderLedger(); closeBuyin();
+};
+document.getElementById('buyinCustom').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('buyinOk').click(); });
+
+// 事件委托：本局表格（仅房主可改）
+document.getElementById('ledBody').addEventListener('click', e=>{
+  if(!isHost()) return;
+  const bi=e.target.closest('input[data-act="buyin"]'); if(bi){ openBuyin(+bi.dataset.i); return; }
+  const b=e.target.closest('button'); if(!b) return;
+  const i=+b.dataset.i, act=b.dataset.act;
+  if(act==='inc'){ game.players[i].buyInHands=(Number(game.players[i].buyInHands)||0)+1; gameSave(true); renderLedger(); }
+  else if(act==='dec'){ game.players[i].buyInHands=Math.max(0,(Number(game.players[i].buyInHands)||0)-1); gameSave(true); renderLedger(); }
+  else if(act==='del'){ game.players.splice(i,1); gameSave(true); renderLedger(); }
+});
+document.getElementById('ledBody').addEventListener('input', e=>{
+  if(!isHost()) return;
+  const inp=e.target.closest('input'); if(!inp || !inp.dataset.f) return;
+  const i=+inp.dataset.i, f=inp.dataset.f;
+  game.players[i][f] = inp.value===''? (f==='cashOut'?'':0) : Number(inp.value);
+  gameSave(); updateAllNets();
+});
+document.getElementById('perHand').addEventListener('input', e=>{ if(!isHost())return; game.perHand=Number(e.target.value)||0; localStorage.setItem('poker_perhand', game.perHand); gameSave(); updateAllNets(); });
+document.getElementById('ledDate').addEventListener('input', e=>{ if(!isHost())return; game.date=e.target.value; gameSave(); });
+document.getElementById('addPick').addEventListener('change', e=>{ if(e.target.value){ addPlayerToGame(e.target.value); e.target.value=''; } });
+document.getElementById('addNew').onclick=()=>{ if(!isHost())return; const n=prompt('临时新人姓名（不存入常用名单）'); if(n) addPlayerToGame(n); };
+
+document.getElementById('startGame').onclick=()=>{
+  if(game){ alert('已有进行中的牌局'); return; }
+  game={ ownerId:myId, date:todayStr(), perHand:lastPerHand(), players:[], updatedAt:Date.now() };
+  lastMode='host'; gameRef.set(game); renderLedger();
+};
+document.getElementById('saveSession').onclick=()=>{
+  if(!isHost()) return;
+  const ps=game.players||[];
+  if(ps.length===0){ alert('本局还没有玩家'); return; }
+  let sumBuy=0,sumOut=0; ps.forEach(p=>{ sumBuy+=playerBuyIn(p); sumOut+=(Number(p.cashOut)||0); });
+  const diff=sumOut-sumBuy;
+  if(Math.abs(diff)>1e-9 && !confirm(`牌桌没平账（差额 ${(diff>0?'+':'')+fmt(diff)}）。仍要结束并保存吗？`)) return;
+  const id=Date.now();
+  const sess={ id, date:game.date, perHand:game.perHand,
+    players: ps.map(p=>({ name:p.name, buyInHands:Number(p.buyInHands)||0, cashOut:Number(p.cashOut)||0, net:playerNet(p) })) };
+  sessionsRef.child(String(id)).set(sess);
+  gameRef.remove(); game=null; lastMode='start'; renderLedger(); alert('已结束并保存到历史 ✓');
+};
+document.getElementById('clearSession').onclick=()=>{
+  if(!isHost()) return;
+  if(!confirm('取消本局？（不会保存到历史）')) return;
+  gameRef.remove(); game=null; lastMode='start'; renderLedger();
+};
+
+// ---- 常用玩家 ----
+function renderRoster(){
+  const w=document.getElementById('rosterWrap'); w.innerHTML='';
+  if(roster.length===0){ w.innerHTML='<div class="empty-hint">还没有常用玩家，下面添加</div>'; return; }
+  roster.forEach((n)=>{
+    const c=document.createElement('span'); c.className='chip';
+    c.innerHTML=`${escapeHtml(n)} <span style="color:var(--muted)">›</span>`;
+    c.onclick=()=>openPlayerDetail(n);
+    w.appendChild(c);
+  });
+}
+
+// ---- 常用玩家详情：累计总账 + 加入牌局 + 删除 ----
+let pdTarget=null;
+function getPlayerTotals(name){
+  let net=0, games=0, buyIn=0; const list=[];
+  sessions.forEach(s=>{ s.players.forEach(p=>{ if(p.name===name){
+    net+=p.net; games++; buyIn+=p.buyInHands*s.perHand;
+    list.push({date:s.date, net:p.net, buyInHands:p.buyInHands, cashOut:p.cashOut});
+  }}); });
+  return {net, games, buyIn, list};
+}
+function openPlayerDetail(name){
+  pdTarget=name;
+  document.getElementById('pdName').textContent=name;
+  const t=getPlayerTotals(name);
+  const cls=t.net>0?'pos':t.net<0?'neg':'';
+  let html=`<div style="text-align:center; margin:6px 0 12px">
+      <div style="font-size:12px;color:var(--muted)">累计输赢</div>
+      <div class="net ${cls}" style="font-size:30px">${(t.net>0?'+':'')+fmt(t.net)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-top:4px">共 ${t.games} 局 · 累计带入 ${fmt(t.buyIn)}</div>
+    </div>`;
+  if(t.list.length){
+    html+='<div style="font-size:12px;color:var(--muted);margin-bottom:2px">每局明细</div>';
+    t.list.forEach(r=>{ const c=r.net>0?'pos':r.net<0?'neg':'';
+      html+=`<div class="hrow"><span>${r.date} <span style="color:var(--muted);font-size:11px">(带入${r.buyInHands}手/带出${fmt(r.cashOut)})</span></span><span class="net ${c}">${(r.net>0?'+':'')+fmt(r.net)}</span></div>`; });
+  } else {
+    html+='<div class="empty-hint">还没有 TA 的历史记录</div>';
+  }
+  document.getElementById('pdBody').innerHTML=html;
+  document.getElementById('playerOverlay').classList.add('show');
+}
+function closePlayerDetail(){ document.getElementById('playerOverlay').classList.remove('show'); pdTarget=null; }
+document.getElementById('pdClose').onclick=closePlayerDetail;
+document.getElementById('playerOverlay').onclick=e=>{ if(e.target.id==='playerOverlay') closePlayerDetail(); };
+document.getElementById('pdDel').onclick=()=>{
+  if(!pdTarget) return;
+  if(confirm('确定删除常用玩家「'+pdTarget+'」？\n（历史记录里的数据不受影响）')){
+    rosterRef.set(roster.filter(x=>x!==pdTarget));
+    closePlayerDetail();
+  }
+};
+document.getElementById('addRoster').onclick=()=>{
+  const inp=document.getElementById('newName'); const n=inp.value.trim(); if(!n) return;
+  if(roster.includes(n)){ alert('已存在'); return; }
+  rosterRef.set([...roster, n]); inp.value='';
+};
+document.getElementById('newName').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('addRoster').click(); });
+
+// ---- 历史 ----
+function renderHistory(){
+  const w=document.getElementById('histWrap'); w.innerHTML='';
+  if(sessions.length===0){ w.innerHTML='<div class="empty-hint">还没有历史记录</div>'; return; }
+  sessions.forEach(s=>{
+    const sumBuy=s.players.reduce((a,p)=>a+p.buyInHands*s.perHand,0);
+    const item=document.createElement('div'); item.className='hist-item';
+    const head=document.createElement('div'); head.className='hist-head';
+    head.innerHTML=`<span class="d">${s.date}</span><span class="s">${s.players.length}人 · 总带入${fmt(sumBuy)} · 1手=${s.perHand}</span>`;
+    const detail=document.createElement('div'); detail.className='hist-detail hidden';
+    let rows=''; [...s.players].sort((a,b)=>b.net-a.net).forEach(p=>{
+      const cls=p.net>0?'pos':p.net<0?'neg':'';
+      rows+=`<div class="hrow"><span>${escapeHtml(p.name)} <span style="color:var(--muted);font-size:11px">(带入${p.buyInHands}手/带出${fmt(p.cashOut)})</span></span><span class="net ${cls}">${(p.net>0?'+':'')+fmt(p.net)}</span></div>`;
+    });
+    rows+=`<div class="hrow" style="margin-top:6px"><button class="btn btn-sm" data-del="${s.id}">删除本局</button></div>`;
+    detail.innerHTML=rows;
+    head.onclick=()=>detail.classList.toggle('hidden');
+    detail.addEventListener('click', e=>{ const d=e.target.closest('[data-del]'); if(d){ if(confirm('删除这局记录？')){ sessionsRef.child(String(d.dataset.del)).remove(); } } });
+    item.appendChild(head); item.appendChild(detail); w.appendChild(item);
+  });
+}
+document.getElementById('clearHist').onclick=()=>{ if(sessions.length && confirm('清空全部历史记录？此操作不可恢复')){ sessionsRef.remove(); } };
+
+// ---- Firebase 实时订阅 ----
+db.ref('.info/connected').on('value', s=>{
+  const el=document.getElementById('connStatus'); if(el) el.textContent = s.val()===true ? '🟢 已连接云端 · 多人实时同步' : '🔴 连接中…';
+});
+let lastMode=null;
+gameRef.on('value', snap=>{
+  const val=snap.val();
+  const incoming = !val ? 'start' : (val.ownerId===myId ? 'host' : 'viewer');
+  // 自己作为房主时，忽略自己写入的回声，避免覆盖正在编辑的本地数据
+  if(incoming==='host' && lastMode==='host'){ return; }
+  game = val;
+  if(game && !game.players) game.players=[];
+  lastMode = gameMode();
+  renderLedger();
+});
+rosterRef.on('value', snap=>{
+  const v=snap.val();
+  roster = !v ? [] : (Array.isArray(v) ? v.filter(x=>x!=null) : Object.keys(v).map(k=>v[k]));
+  renderRoster(); if(isHost()) renderAddPick();
+});
+sessionsRef.on('value', snap=>{
+  const v=snap.val()||{};
+  sessions = Object.keys(v).map(k=>v[k]).sort((a,b)=>(b.id||0)-(a.id||0));
+  renderHistory();
+});
+renderRoster(); renderHistory();
+
+/* =========================================================
+   三、标签切换
+   ========================================================= */
+document.querySelectorAll('.navitem').forEach(t=>{
+  t.onclick=()=>{
+    document.querySelectorAll('.navitem').forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    const tab=t.dataset.tab;
+    document.getElementById('tab-ledger').classList.toggle('hidden', tab!=='ledger');
+    document.getElementById('tab-roster').classList.toggle('hidden', tab!=='roster');
+    document.getElementById('tab-calc').classList.toggle('hidden', tab!=='calc');
+    window.scrollTo(0,0);
+  };
+});
 </script>
 </body>
 </html>
