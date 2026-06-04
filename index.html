@@ -1,0 +1,465 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>德州扑克胜率计算器</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1f2630; --line:#30363d;
+    --text:#e6edf3; --muted:#8b949e; --accent:#2f81f7; --green:#3fb950; --red:#f85149;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{margin:0; padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
+    padding:14px; max-width:640px; margin:0 auto; padding-bottom:90px;
+  }
+  h1{font-size:20px; margin:4px 0 14px; text-align:center;}
+  h1 small{display:block; font-size:12px; color:var(--muted); font-weight:normal; margin-top:4px;}
+  .panel{background:var(--panel); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px;}
+  .panel-title{font-size:13px; color:var(--muted); margin-bottom:10px; display:flex; justify-content:space-between; align-items:center;}
+  .cards-row{display:flex; gap:8px; flex-wrap:wrap; align-items:center;}
+  .card{
+    width:46px; height:64px; border-radius:8px; background:var(--panel2); border:1px solid var(--line);
+    display:flex; flex-direction:column; align-items:center; justify-content:center; cursor:pointer;
+    font-weight:700; user-select:none; transition:transform .08s;
+  }
+  .card:active{transform:scale(.94);}
+  .card.empty{color:var(--muted); font-size:22px; font-weight:400; border-style:dashed;}
+  .card .rank{font-size:20px; line-height:1;}
+  .card .suit{font-size:18px; line-height:1; margin-top:2px;}
+  .card.red{color:#ff6b6b;}
+  .card.black{color:#e6edf3;}
+  .player{display:flex; align-items:center; gap:10px; margin-bottom:10px;}
+  .player .pname{font-size:13px; width:54px; flex-shrink:0; color:var(--muted);}
+  .player .holes{display:flex; gap:8px;}
+  .player .res{margin-left:auto; text-align:right; min-width:78px;}
+  .player .res .eq{font-size:18px; font-weight:700;}
+  .player .res .sub{font-size:10px; color:var(--muted);}
+  .barwrap{height:5px; background:#0a0d12; border-radius:3px; overflow:hidden; margin-top:4px;}
+  .bar{height:100%; background:var(--accent); width:0%; transition:width .3s;}
+  .winner .eq{color:var(--green);}
+  .btn{
+    background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:8px;
+    padding:7px 12px; font-size:13px; cursor:pointer;
+  }
+  .btn:active{background:#2a3340;}
+  .btn-sm{padding:4px 9px; font-size:12px;}
+  .row-actions{display:flex; gap:8px; margin-top:6px;}
+  .calc-bar{
+    position:fixed; left:0; right:0; bottom:0; padding:12px 14px; background:linear-gradient(transparent,var(--bg) 30%);
+    display:flex; gap:10px; max-width:640px; margin:0 auto;
+  }
+  .btn-calc{flex:1; background:var(--accent); border:none; color:#fff; font-size:16px; font-weight:700; padding:14px; border-radius:10px;}
+  .btn-calc:disabled{opacity:.6;}
+  .progress{font-size:12px; color:var(--muted); text-align:center; margin-top:6px; height:14px;}
+  /* picker */
+  .overlay{position:fixed; inset:0; background:rgba(0,0,0,.7); display:none; align-items:flex-end; z-index:50;}
+  .overlay.show{display:flex;}
+  .picker{background:var(--panel); width:100%; max-width:640px; margin:0 auto; border-radius:16px 16px 0 0; padding:14px; max-height:80vh; overflow:auto;}
+  .picker h3{margin:0 0 10px; font-size:15px; display:flex; justify-content:space-between; align-items:center;}
+  .suit-group{margin-bottom:10px;}
+  .suit-label{font-size:13px; color:var(--muted); margin-bottom:6px;}
+  .rank-grid{display:grid; grid-template-columns:repeat(7,1fr); gap:6px;}
+  .pcard{
+    aspect-ratio:3/4; border-radius:7px; background:var(--panel2); border:1px solid var(--line);
+    display:flex; align-items:center; justify-content:center; font-size:17px; font-weight:700; cursor:pointer;
+  }
+  .pcard:active{transform:scale(.92);}
+  .pcard.used{opacity:.25; pointer-events:none;}
+  .pcard.red{color:#ff6b6b;}
+  .picker-foot{display:flex; gap:10px; margin-top:8px;}
+  select,input[type=number]{background:var(--panel2); color:var(--text); border:1px solid var(--line); border-radius:7px; padding:6px; font-size:13px;}
+</style>
+</head>
+<body>
+
+<h1>德州扑克胜率计算器
+  <small>蒙特卡洛模拟 · 手牌留空 = 随机对手</small>
+</h1>
+
+<div class="panel">
+  <div class="panel-title"><span>公共牌（可选 · 翻牌前可全部留空）</span></div>
+  <div class="cards-row" id="board"></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title"><span>玩家手牌</span></div>
+  <div id="players"></div>
+  <div class="row-actions">
+    <button class="btn btn-sm" id="addPlayer">+ 加玩家</button>
+    <button class="btn btn-sm" id="delPlayer">− 减玩家</button>
+    <button class="btn btn-sm" id="clearAll">清空全部</button>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title"><span>模拟次数</span></div>
+  <div class="cards-row">
+    <select id="iters">
+      <option value="20000">快速 (2万)</option>
+      <option value="100000" selected>标准 (10万)</option>
+      <option value="500000">精确 (50万)</option>
+    </select>
+    <span style="font-size:12px;color:var(--muted)">次数越多越准，但越慢</span>
+  </div>
+</div>
+
+<div class="progress" id="progress"></div>
+
+<div class="calc-bar">
+  <button class="btn-calc" id="calc">计算胜率</button>
+</div>
+
+<!-- card picker -->
+<div class="overlay" id="overlay">
+  <div class="picker">
+    <h3><span id="pickerTitle">选择牌</span><button class="btn btn-sm" id="pickerClose">关闭</button></h3>
+    <div id="pickerBody"></div>
+    <div class="picker-foot">
+      <button class="btn" id="pickerClear" style="flex:1">清除此牌</button>
+    </div>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ---------- 常量 ----------
+const RANKS = ['2','3','4','5','6','7','8','9','T','J','Q','K','A'];
+const RANK_VAL = {2:2,3:3,4:4,5:5,6:6,7:7,8:8,9:9,T:10,J:11,Q:12,K:13,A:14};
+const SUITS = [
+  {ch:'♠', name:'黑桃', color:'black'},
+  {ch:'♥', name:'红桃', color:'red'},
+  {ch:'♦', name:'方块', color:'red'},
+  {ch:'♣', name:'梅花', color:'black'},
+];
+// 一张牌用整数 0..51 表示：rankIndex*4 + suitIndex
+function cardId(ri, si){ return ri*4 + si; }
+function cardRankVal(id){ return RANK_VAL[RANKS[Math.floor(id/4)]]; }
+function cardSuit(id){ return id % 4; }
+function cardLabel(id){ return RANKS[Math.floor(id/4)]; }
+
+// ---------- 状态 ----------
+// board: 5 个槽位; players: 每人 2 个槽位。null 表示空
+let board = [null,null,null,null,null];
+let players = [ [null,null], [null,null] ];
+const BOARD_LABELS = ['翻牌','翻牌','翻牌','转牌','河牌'];
+
+// ---------- 渲染 ----------
+function renderCardSlot(id, onClick){
+  const el = document.createElement('div');
+  if(id===null){
+    el.className='card empty'; el.textContent='+';
+  }else{
+    const ri=Math.floor(id/4), si=id%4;
+    el.className='card '+SUITS[si].color;
+    el.innerHTML=`<span class="rank">${RANKS[ri]}</span><span class="suit">${SUITS[si].ch}</span>`;
+  }
+  el.onclick=onClick;
+  return el;
+}
+
+function renderBoard(){
+  const wrap=document.getElementById('board'); wrap.innerHTML='';
+  for(let i=0;i<5;i++){
+    const slot=renderCardSlot(board[i], ()=>openPicker('board',i));
+    const box=document.createElement('div');
+    box.style.textAlign='center';
+    box.appendChild(slot);
+    const lbl=document.createElement('div');
+    lbl.style.fontSize='10px'; lbl.style.color='var(--muted)'; lbl.style.marginTop='3px';
+    lbl.textContent=BOARD_LABELS[i];
+    box.appendChild(lbl);
+    wrap.appendChild(box);
+  }
+}
+
+function renderPlayers(results){
+  const wrap=document.getElementById('players'); wrap.innerHTML='';
+  players.forEach((hand,pi)=>{
+    const row=document.createElement('div'); row.className='player';
+    const name=document.createElement('div'); name.className='pname'; name.textContent='玩家 '+(pi+1);
+    row.appendChild(name);
+    const holes=document.createElement('div'); holes.className='holes';
+    for(let h=0;h<2;h++){
+      holes.appendChild(renderCardSlot(hand[h], ()=>openPicker('player',pi,h)));
+    }
+    row.appendChild(holes);
+    if(results && results[pi]){
+      const r=results[pi];
+      const res=document.createElement('div'); res.className='res';
+      res.innerHTML=`<div class="eq">${r.equity}%</div>
+        <div class="sub">胜 ${r.win}% · 平 ${r.tie}%</div>
+        <div class="barwrap"><div class="bar" style="width:${r.equity}%"></div></div>`;
+      if(r.best) row.classList.add('winner');
+      row.appendChild(res);
+    }
+    wrap.appendChild(row);
+  });
+}
+
+function renderAll(results){ renderBoard(); renderPlayers(results); }
+
+// ---------- 已用牌集合 ----------
+function usedSet(){
+  const s=new Set();
+  board.forEach(c=>{ if(c!==null) s.add(c); });
+  players.forEach(h=>h.forEach(c=>{ if(c!==null) s.add(c); }));
+  return s;
+}
+
+// ---------- 选牌器 ----------
+let pickerTarget=null; // {type:'board'|'player', idx, sub}
+function openPicker(type, idx, sub){
+  pickerTarget={type,idx,sub};
+  const used=usedSet();
+  // 当前槽位已选的牌不算"被占用"
+  let cur=null;
+  if(type==='board') cur=board[idx];
+  else cur=players[idx][sub];
+  if(cur!==null) used.delete(cur);
+
+  document.getElementById('pickerTitle').textContent =
+    type==='board' ? '选择公共牌' : `玩家 ${idx+1} 的手牌`;
+  const body=document.getElementById('pickerBody'); body.innerHTML='';
+  SUITS.forEach((su,si)=>{
+    const g=document.createElement('div'); g.className='suit-group';
+    const lab=document.createElement('div'); lab.className='suit-label';
+    lab.innerHTML=`<span class="${su.color==='red'?'':''}" style="color:${su.color==='red'?'#ff6b6b':'#e6edf3'}">${su.ch} ${su.name}</span>`;
+    g.appendChild(lab);
+    const grid=document.createElement('div'); grid.className='rank-grid';
+    for(let ri=RANKS.length-1; ri>=0; ri--){
+      const id=cardId(ri,si);
+      const c=document.createElement('div');
+      c.className='pcard '+su.color+(used.has(id)?' used':'');
+      c.innerHTML=`${RANKS[ri]}<span style="font-size:12px;margin-left:1px">${su.ch}</span>`;
+      c.onclick=()=>chooseCard(id);
+      grid.appendChild(c);
+    }
+    g.appendChild(grid);
+    body.appendChild(g);
+  });
+  document.getElementById('overlay').classList.add('show');
+}
+function chooseCard(id){
+  const t=pickerTarget;
+  if(t.type==='board') board[t.idx]=id;
+  else players[t.idx][t.sub]=id;
+  closePicker(); renderAll();
+}
+function clearCurrentCard(){
+  const t=pickerTarget; if(!t) return;
+  if(t.type==='board') board[t.idx]=null;
+  else players[t.idx][t.sub]=null;
+  closePicker(); renderAll();
+}
+function closePicker(){ document.getElementById('overlay').classList.remove('show'); pickerTarget=null; }
+
+// ---------- 7 张牌评估器 ----------
+// 返回可比较的数值分数：category 在最高位，后接 tiebreaker
+function straightHigh(rankSet){
+  // rankSet: Set of rank values (2..14)。返回顺子最大牌点，没有则 0
+  // A 可作 1（轮子 A2345）
+  const s=new Set(rankSet);
+  if(s.has(14)) s.add(1);
+  for(let hi=14; hi>=5; hi--){
+    let ok=true;
+    for(let k=0;k<5;k++){ if(!s.has(hi-k)){ ok=false; break; } }
+    if(ok) return hi;
+  }
+  return 0;
+}
+// 把分类和最多5个 tiebreaker 打包成一个数（每段用 16 进制位，足够 0..15）
+function pack(cat, t){
+  let v=cat;
+  for(let i=0;i<5;i++){ v = v*16 + (t[i]||0); }
+  return v;
+}
+function evaluate7(cards){
+  // cards: 7 个 card id
+  const cnt={};            // rank -> 数量
+  const suitCount=[0,0,0,0];
+  const suitRanks=[[],[],[],[]];
+  const allRanks=[];
+  for(const id of cards){
+    const rv=cardRankVal(id), su=cardSuit(id);
+    cnt[rv]=(cnt[rv]||0)+1;
+    suitCount[su]++; suitRanks[su].push(rv);
+    allRanks.push(rv);
+  }
+  // 同花
+  let flushSuit=-1;
+  for(let i=0;i<4;i++) if(suitCount[i]>=5) flushSuit=i;
+  // 同花顺
+  if(flushSuit>=0){
+    const sh=straightHigh(new Set(suitRanks[flushSuit]));
+    if(sh) return pack(8,[sh]);
+  }
+  // 按 数量, 点数 排序的分组
+  const groups=Object.keys(cnt).map(r=>({r:+r,c:cnt[r]}));
+  groups.sort((a,b)=> b.c-a.c || b.r-a.r);
+  const rankDesc=[...new Set(allRanks)].sort((a,b)=>b-a);
+
+  // 四条
+  if(groups[0].c===4){
+    const quad=groups[0].r;
+    const kicker=Math.max(...allRanks.filter(r=>r!==quad));
+    return pack(7,[quad,kicker]);
+  }
+  // 葫芦（三条 + 对子/另一组三条）
+  if(groups[0].c===3 && groups.length>1 && groups[1].c>=2){
+    return pack(6,[groups[0].r, groups[1].r]);
+  }
+  // 同花
+  if(flushSuit>=0){
+    const top=[...suitRanks[flushSuit]].sort((a,b)=>b-a).slice(0,5);
+    return pack(5,top);
+  }
+  // 顺子
+  const sh=straightHigh(new Set(allRanks));
+  if(sh) return pack(4,[sh]);
+  // 三条
+  if(groups[0].c===3){
+    const t=groups[0].r;
+    const ks=rankDesc.filter(r=>r!==t).slice(0,2);
+    return pack(3,[t,ks[0],ks[1]]);
+  }
+  // 两对
+  if(groups[0].c===2 && groups.length>1 && groups[1].c===2){
+    const p1=groups[0].r, p2=groups[1].r;
+    const k=Math.max(...rankDesc.filter(r=>r!==p1 && r!==p2));
+    return pack(2,[p1,p2,k]);
+  }
+  // 一对
+  if(groups[0].c===2){
+    const p=groups[0].r;
+    const ks=rankDesc.filter(r=>r!==p).slice(0,3);
+    return pack(1,[p,ks[0],ks[1],ks[2]]);
+  }
+  // 高牌
+  return pack(0, rankDesc.slice(0,5));
+}
+
+// ---------- 蒙特卡洛模拟 ----------
+function simulate(iters, onDone){
+  const used=usedSet();
+  const knownBoard=board.filter(c=>c!==null);
+  // 剩余牌堆
+  const deck=[];
+  for(let id=0; id<52; id++) if(!used.has(id)) deck.push(id);
+  const np=players.length;
+  // 需要随机发的：每个玩家空槽 + 公共牌补到5
+  const playerEmpty=players.map(h=>h.filter(c=>c===null).length);
+  const boardNeed=5-knownBoard.length;
+  let totalNeed=boardNeed; playerEmpty.forEach(n=>totalNeed+=n);
+  if(totalNeed>deck.length){ alert('牌不够用了，请检查输入'); return; }
+
+  const wins=new Array(np).fill(0);
+  const ties=new Array(np).fill(0);   // 平局时给每个并列者 +1/并列人数
+  const equityTie=new Array(np).fill(0);
+  const sevens=new Array(np); // 复用数组
+  for(let i=0;i<np;i++) sevens[i]=new Array(7);
+
+  const dlen=deck.length;
+  let done=0;
+  const BATCH=4000;
+
+  function runBatch(){
+    const end=Math.min(done+BATCH, iters);
+    for(let it=done; it<end; it++){
+      // 部分 Fisher-Yates：抽 totalNeed 张
+      for(let k=0;k<totalNeed;k++){
+        const j=k+Math.floor(Math.random()*(dlen-k));
+        const tmp=deck[k]; deck[k]=deck[j]; deck[j]=tmp;
+      }
+      let drawIdx=0;
+      // 完整公共牌
+      const fullBoard=new Array(5);
+      for(let b=0;b<knownBoard.length;b++) fullBoard[b]=knownBoard[b];
+      for(let b=knownBoard.length;b<5;b++) fullBoard[b]=deck[drawIdx++];
+      // 每个玩家 7 张并评估
+      let bestScore=-1;
+      for(let p=0;p<np;p++){
+        const h=players[p];
+        const sv=sevens[p];
+        let hi=0;
+        for(let c=0;c<2;c++){ sv[c] = h[c]!==null ? h[c] : deck[drawIdx++]; }
+        for(let b=0;b<5;b++) sv[2+b]=fullBoard[b];
+        const sc=evaluate7(sv);
+        sv.score=sc;
+        if(sc>bestScore) bestScore=sc;
+      }
+      // 统计赢家
+      let winners=0;
+      for(let p=0;p<np;p++) if(sevens[p].score===bestScore) winners++;
+      if(winners===1){
+        for(let p=0;p<np;p++) if(sevens[p].score===bestScore){ wins[p]++; equityTie[p]+=1; }
+      }else{
+        const share=1/winners;
+        for(let p=0;p<np;p++) if(sevens[p].score===bestScore){ ties[p]++; equityTie[p]+=share; }
+      }
+    }
+    done=end;
+    document.getElementById('progress').textContent=
+      `模拟中… ${Math.round(done/iters*100)}%`;
+    if(done<iters){ setTimeout(runBatch, 0); }
+    else{
+      const results=[];
+      let maxEq=-1;
+      for(let p=0;p<np;p++){
+        const eq=equityTie[p]/iters*100;
+        if(eq>maxEq) maxEq=eq;
+        results.push({
+          win:(wins[p]/iters*100).toFixed(1),
+          tie:(ties[p]/iters*100).toFixed(1),
+          equity:eq.toFixed(1),
+          eqNum:eq
+        });
+      }
+      results.forEach(r=> r.best = (Math.abs(r.eqNum-maxEq)<1e-9));
+      onDone(results);
+    }
+  }
+  runBatch();
+}
+
+// ---------- 事件 ----------
+document.getElementById('calc').onclick=()=>{
+  // 校验：每个玩家要么 2 张都填，要么都空（随机）。允许只填一张吗？允许，另一张随机
+  const iters=+document.getElementById('iters').value;
+  const btn=document.getElementById('calc');
+  btn.disabled=true; btn.textContent='计算中…';
+  setTimeout(()=>{
+    simulate(iters,(results)=>{
+      renderPlayers(results);
+      btn.disabled=false; btn.textContent='计算胜率';
+      document.getElementById('progress').textContent='完成 ✓ （共 '+iters.toLocaleString()+' 次模拟）';
+    });
+  },30);
+};
+document.getElementById('addPlayer').onclick=()=>{
+  if(players.length>=9){ alert('最多 9 个玩家'); return; }
+  players.push([null,null]); renderPlayers();
+};
+document.getElementById('delPlayer').onclick=()=>{
+  if(players.length<=2){ alert('至少 2 个玩家'); return; }
+  players.pop(); renderPlayers();
+};
+document.getElementById('clearAll').onclick=()=>{
+  board=[null,null,null,null,null];
+  players=players.map(()=>[null,null]);
+  document.getElementById('progress').textContent='';
+  renderAll();
+};
+document.getElementById('pickerClose').onclick=closePicker;
+document.getElementById('pickerClear').onclick=clearCurrentCard;
+document.getElementById('overlay').onclick=(e)=>{ if(e.target.id==='overlay') closePicker(); };
+
+// init
+renderAll();
+</script>
+</body>
+</html>
