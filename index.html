@@ -237,6 +237,18 @@
   </div>
 </div>
 
+<!-- 账不平 · 自动分摊 -->
+<div class="overlay" id="settleOverlay">
+  <div class="picker">
+    <h3><span>⚠️ 账不平 · 自动分摊</span><button class="btn btn-sm" id="settleClose">关闭</button></h3>
+    <div id="settleBody"></div>
+    <div class="picker-foot" style="flex-direction:column; gap:8px; margin-top:12px">
+      <button class="btn" id="settleConfirm" style="width:100%; background:var(--accent); color:#fff; border:none; font-weight:600">确认分摊并保存</button>
+      <button class="btn" id="settleRaw" style="width:100%">不分摊，原样保存</button>
+    </div>
+  </div>
+</div>
+
 <!-- 带入手数选择 -->
 <div class="overlay" id="buyinOverlay">
   <div class="picker">
@@ -631,18 +643,97 @@ document.getElementById('startGame').onclick=()=>{
   game={ ownerId:myId, date:todayStr(), perHand:lastPerHand(), players:[], updatedAt:Date.now() };
   lastMode='host'; gameRef.set(game); renderLedger();
 };
+// 计算分摊：水上=赢家(net>0)，水下=输家(net<0)
+// 差额>0(水上多了)→按水下亏损比例摊给水下；差额<0(水下多了)→按水上盈余比例摊给水上
+function adjustedNets(players){
+  const nets=players.map(p=>playerNet(p));
+  let sumWins=0, sumLosses=0;
+  nets.forEach(n=>{ if(n>0) sumWins+=n; else if(n<0) sumLosses+=-n; });
+  const diff=sumWins-sumLosses;                 // = 总带出 − 总带入
+  if(Math.abs(diff)<1e-9) return { diff:0, newNets:nets };
+  let side, factor;
+  if(diff>0){ side='losses'; if(sumLosses<1e-9) return { diff, impossible:true, newNets:nets }; factor=sumWins/sumLosses; }
+  else      { side='wins';   if(sumWins<1e-9)   return { diff, impossible:true, newNets:nets }; factor=sumLosses/sumWins; }
+  const newNets=nets.map(n=>{
+    if(side==='losses' && n<0) return n*factor;
+    if(side==='wins'   && n>0) return n*factor;
+    return n;
+  });
+  // 四舍五入到 2 位，把舍入残差补到「被调整一侧」绝对值最大者，保证总和精确为 0
+  const sideIdx=[]; nets.forEach((n,i)=>{ if((side==='losses'&&n<0)||(side==='wins'&&n>0)) sideIdx.push(i); });
+  for(let i=0;i<newNets.length;i++) newNets[i]=Math.round(newNets[i]*100)/100;
+  let resid=Math.round(newNets.reduce((a,b)=>a+b,0)*100)/100;
+  if(Math.abs(resid)>1e-9 && sideIdx.length){
+    let best=sideIdx[0]; sideIdx.forEach(i=>{ if(Math.abs(newNets[i])>Math.abs(newNets[best])) best=i; });
+    newNets[best]=Math.round((newNets[best]-resid)*100)/100;
+  }
+  return { diff, side, factor, newNets, sumWins, sumLosses };
+}
+function finalizeSave(ps, newNets){
+  const ph=Number(game.perHand)||0, date=game.date, perHand=game.perHand;
+  const id=Date.now();
+  const players=ps.map((p,i)=>{
+    const buyHands=Number(p.buyInHands)||0;
+    const net = newNets ? newNets[i] : Math.round(playerNet(p)*100)/100;
+    const cashOut = newNets ? Math.round((buyHands*ph + net)*100)/100 : (Number(p.cashOut)||0);
+    return { name:p.name, buyInHands:buyHands, cashOut, net };
+  });
+  sessionsRef.child(String(id)).set({ id, date, perHand, players });
+  gameRef.remove(); game=null; lastMode='start'; renderLedger();
+}
+
+let settlePending=null;
+function openSettle(ps, adj){
+  settlePending={ps, adj};
+  const sumBuy=ps.reduce((a,p)=>a+playerBuyIn(p),0);
+  const sumOut=ps.reduce((a,p)=>a+(Number(p.cashOut)||0),0);
+  const dc=adj.diff>0?'pos':'neg';
+  let html=`<div style="font-size:13px; line-height:1.7; margin:4px 0 10px">
+    总带入 <b>${fmt(sumBuy)}</b> · 总带出 <b>${fmt(sumOut)}</b><br>
+    差额 <b class="net ${dc}">${(adj.diff>0?'+':'')+fmt(adj.diff)}</b>`;
+  const conf=document.getElementById('settleConfirm');
+  if(adj.impossible){
+    html+=`<br><span class="balance-bad">${adj.diff>0?'没有「水下」玩家':'没有「水上」玩家'}，无法按比例分摊。请返回修改，或原样保存。</span></div>`;
+    conf.classList.add('hidden');
+  } else {
+    const who = adj.diff>0 ? '水上多了，按「水下亏损」比例分摊给水下：' : '水下多了，按「水上盈余」比例分摊给水上：';
+    html+=`<br><span style="color:var(--muted)">${who}</span></div>`;
+    conf.classList.remove('hidden');
+    html+='<table class="ltable"><thead><tr><th>姓名</th><th>原输赢</th><th>分摊后</th></tr></thead><tbody>';
+    ps.forEach((p,i)=>{
+      const oldNet=playerNet(p), newNet=adj.newNets[i];
+      const changed=Math.abs(newNet-oldNet)>1e-9;
+      const oc=oldNet>0?'pos':oldNet<0?'neg':'', nc=newNet>0?'pos':newNet<0?'neg':'';
+      html+=`<tr><td class="name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
+        <td><span class="net ${oc}">${(oldNet>0?'+':'')+fmt(oldNet)}</span></td>
+        <td>${changed?`<span class="net ${nc}">${(newNet>0?'+':'')+fmt(newNet)}</span>`:'<span style="color:var(--muted)">不变</span>'}</td></tr>`;
+    });
+    html+='</tbody></table>';
+  }
+  document.getElementById('settleBody').innerHTML=html;
+  document.getElementById('settleOverlay').classList.add('show');
+}
+function closeSettle(){ document.getElementById('settleOverlay').classList.remove('show'); settlePending=null; }
+document.getElementById('settleClose').onclick=closeSettle;
+document.getElementById('settleOverlay').onclick=e=>{ if(e.target.id==='settleOverlay') closeSettle(); };
+document.getElementById('settleConfirm').onclick=()=>{
+  if(!settlePending || settlePending.adj.impossible) return;
+  finalizeSave(settlePending.ps, settlePending.adj.newNets);
+  closeSettle(); alert('已按比例分摊并保存 ✓');
+};
+document.getElementById('settleRaw').onclick=()=>{
+  if(!settlePending) return;
+  finalizeSave(settlePending.ps, null);
+  closeSettle(); alert('已原样保存（未分摊）✓');
+};
+
 document.getElementById('saveSession').onclick=()=>{
   if(!isHost()) return;
   const ps=game.players||[];
   if(ps.length===0){ alert('本局还没有玩家'); return; }
-  let sumBuy=0,sumOut=0; ps.forEach(p=>{ sumBuy+=playerBuyIn(p); sumOut+=(Number(p.cashOut)||0); });
-  const diff=sumOut-sumBuy;
-  if(Math.abs(diff)>1e-9 && !confirm(`牌桌没平账（差额 ${(diff>0?'+':'')+fmt(diff)}）。仍要结束并保存吗？`)) return;
-  const id=Date.now();
-  const sess={ id, date:game.date, perHand:game.perHand,
-    players: ps.map(p=>({ name:p.name, buyInHands:Number(p.buyInHands)||0, cashOut:Number(p.cashOut)||0, net:playerNet(p) })) };
-  sessionsRef.child(String(id)).set(sess);
-  gameRef.remove(); game=null; lastMode='start'; renderLedger(); alert('已结束并保存到历史 ✓');
+  const adj=adjustedNets(ps);
+  if(!adj.diff){ finalizeSave(ps, null); alert('已结束并保存到历史 ✓'); return; }
+  openSettle(ps, adj);
 };
 document.getElementById('clearSession').onclick=()=>{
   if(!isHost()) return;
