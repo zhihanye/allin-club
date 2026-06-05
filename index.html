@@ -93,6 +93,9 @@
   .tab.active{background:var(--accent); color:#fff;}
   .tab-mini{flex:0 0 auto; padding-left:14px; padding-right:14px; font-size:13px;}
   .hidden{display:none !important;}
+  #adminBtn{ position:fixed; top:10px; right:10px; z-index:45; background:var(--panel2); border:1px solid var(--line);
+    color:var(--muted); border-radius:9px; padding:7px 10px; font-size:15px; cursor:pointer; line-height:1; }
+  #adminBtn.on{ color:var(--accent); border-color:var(--accent); }
   /* bottom nav */
   .bottomnav{position:fixed; left:0; right:0; bottom:0; max-width:640px; margin:0 auto;
     display:flex; background:var(--panel); border-top:1px solid var(--line); z-index:40;}
@@ -145,6 +148,8 @@
 </style>
 </head>
 <body>
+
+<button id="adminBtn" title="管理员入口">🔧</button>
 
 <h1>♠️ All-in CLUB
   <small>牌局记账 · 随手算胜率</small>
@@ -527,6 +532,11 @@ const gameRef = db.ref('game'), rosterRef = db.ref('roster'), sessionsRef = db.r
 let myId = localStorage.getItem('poker_myid');
 if(!myId){ myId='u'+Math.random().toString(36).slice(2)+Date.now().toString(36); localStorage.setItem('poker_myid', myId); }
 
+// 管理员：凭密码进入后，可管理任意进行中的牌局（与房主同权限）
+const ADMIN_PASSWORD = "6666";   // 管理员密码（想改告诉我）
+function isAdmin(){ return localStorage.getItem('poker_admin')==='1'; }
+function canEdit(){ return isHost() || isAdmin(); }
+
 let roster = [];
 let sessions = [];
 let game = null;            // 当前共享牌局；null=无
@@ -588,13 +598,13 @@ function renderLedger(){
   document.getElementById('startPanel').classList.toggle('hidden', mode!=='start');
   document.getElementById('gamePanel').classList.toggle('hidden', mode==='start');
   if(mode==='start') return;
-  const host=(mode==='host');
-  document.getElementById('viewerBanner').classList.toggle('hidden', host);
-  document.getElementById('addRow').classList.toggle('hidden', !host);
-  document.getElementById('hostActions').classList.toggle('hidden', !host);
-  document.getElementById('gameTitle').textContent = host ? '本局记账（你是房主）' : '牌局围观（只读）';
+  const editable = isHost() || isAdmin();
+  document.getElementById('viewerBanner').classList.toggle('hidden', editable);
+  document.getElementById('addRow').classList.toggle('hidden', !editable);
+  document.getElementById('hostActions').classList.toggle('hidden', !editable);
+  document.getElementById('gameTitle').textContent = isHost() ? '本局记账（你是房主）' : (isAdmin() ? '本局记账（管理员）' : '牌局围观（只读）');
   // 分摊失效（有人改了数）则清掉
-  if(host && game.split && !splitValid()){ delete game.split; gameSave(true); }
+  if(editable && game.split && !splitValid()){ delete game.split; gameSave(true); }
   const showSplit = splitValid();
   document.getElementById('ledHeadRow').innerHTML = showSplit
     ? '<th>姓名</th><th>带入(手)</th><th>带出</th><th>输赢</th><th>分摊后</th><th></th>'
@@ -611,7 +621,7 @@ function renderLedger(){
       const cls = nv>0?'pos':nv<0?'neg':'';
       splitCell = `<td><span class="net ${cls}">${(nv>0?'+':'')+fmt(nv)}</span></td>`;
     }
-    if(host){
+    if(editable){
       tr.innerHTML=`
         <td class="name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</td>
         <td><span class="step">
@@ -635,7 +645,7 @@ function renderLedger(){
     tb.appendChild(tr);
   });
   updateAllNets();
-  if(host) renderAddPick();
+  if(editable) renderAddPick();
 }
 function updateAllNets(){
   if(!game) return;
@@ -653,7 +663,7 @@ function updateAllNets(){
     : `<span class="net ${dispDiff<0?'neg':'pos'}">差额 ${(dispDiff>0?'+':'')+fmt(dispDiff)}</span>`;
   t.innerHTML=`<span>总带入 <b>${fmt(sumBuy)}</b></span><span>总带出 <b>${fmt(sumOut)}</b></span><span>${bal}</span>`;
   const sbtn=document.getElementById('settleNowBtn');
-  if(sbtn) sbtn.classList.toggle('hidden', !(isHost() && Math.abs(diff)>1e-9 && !splitValid()));
+  if(sbtn) sbtn.classList.toggle('hidden', !(canEdit() && Math.abs(diff)>1e-9 && !splitValid()));
 }
 function renderAddPick(){
   const sel=document.getElementById('addPick');
@@ -664,7 +674,7 @@ function renderAddPick(){
 }
 
 function addPlayerToGame(name){
-  if(!isHost()) return;
+  if(!canEdit()) return;
   name=(name||'').trim(); if(!name) return;
   game.players=game.players||[];
   if(game.players.some(p=>p.name===name)){ uiAlert('该玩家已在本局'); return; }
@@ -676,7 +686,7 @@ function addPlayerToGame(name){
 let buyinIdx=null;
 const BUYIN_PRESETS=[1,2,3,4,5,10];
 function openBuyin(i){
-  if(!isHost()) return;
+  if(!canEdit()) return;
   buyinIdx=i; const p=game.players[i];
   document.getElementById('buyinTitle').textContent=p.name+' · 带入手数';
   const wrap=document.getElementById('buyinPresets'); wrap.innerHTML='';
@@ -701,7 +711,7 @@ document.getElementById('buyinCustom').addEventListener('keydown', e=>{ if(e.key
 
 // 事件委托：本局表格（仅房主可改）
 document.getElementById('ledBody').addEventListener('click', async e=>{
-  if(!isHost()) return;
+  if(!canEdit()) return;
   const bi=e.target.closest('input[data-act="buyin"]'); if(bi){ openBuyin(+bi.dataset.i); return; }
   const b=e.target.closest('button'); if(!b) return;
   const i=+b.dataset.i, act=b.dataset.act;
@@ -710,21 +720,21 @@ document.getElementById('ledBody').addEventListener('click', async e=>{
   else if(act==='del'){ const nm=game.players[i]?game.players[i].name:''; if(!(await uiConfirm('确定移除玩家「'+nm+'」？',{danger:true}))) return; game.players.splice(i,1); gameSave(true); renderLedger(); }
 });
 document.getElementById('ledBody').addEventListener('input', e=>{
-  if(!isHost()) return;
+  if(!canEdit()) return;
   const inp=e.target.closest('input'); if(!inp || !inp.dataset.f) return;
   const i=+inp.dataset.i, f=inp.dataset.f;
   game.players[i][f] = inp.value===''? (f==='cashOut'?'':0) : Number(inp.value);
   gameSave(); updateAllNets();
 });
-document.getElementById('perHand').addEventListener('input', e=>{ if(!isHost())return; game.perHand=Number(e.target.value)||0; localStorage.setItem('poker_perhand', game.perHand); gameSave(); updateAllNets(); });
-document.getElementById('ledDate').addEventListener('input', e=>{ if(!isHost())return; game.date=e.target.value; gameSave(); });
+document.getElementById('perHand').addEventListener('input', e=>{ if(!canEdit())return; game.perHand=Number(e.target.value)||0; localStorage.setItem('poker_perhand', game.perHand); gameSave(); updateAllNets(); });
+document.getElementById('ledDate').addEventListener('input', e=>{ if(!canEdit())return; game.date=e.target.value; gameSave(); });
 document.getElementById('addPick').addEventListener('change', e=>{ if(e.target.value){ addPlayerToGame(e.target.value); e.target.value=''; } });
-document.getElementById('addNew').onclick=async ()=>{ if(!isHost())return; const n=await uiPrompt('临时新人姓名（不存入常用名单）'); if(n) addPlayerToGame(n); };
+document.getElementById('addNew').onclick=async ()=>{ if(!canEdit())return; const n=await uiPrompt('临时新人姓名（不存入常用名单）'); if(n) addPlayerToGame(n); };
 
 document.getElementById('startGame').onclick=()=>{
   if(game){ uiAlert('已有进行中的牌局'); return; }
   game={ ownerId:myId, date:todayStr(), perHand:lastPerHand(), players:[], updatedAt:Date.now() };
-  lastMode='host'; gameRef.set(game); renderLedger();
+  lastMode='edit'; gameRef.set(game); renderLedger();
 };
 // 计算分摊：水上=赢家(net>0)，水下=输家(net<0)
 // 谁多了谁均摊：差额>0(水上多了)→水上各自少赢(缩小到=水下,红)；差额<0(水下多了)→水下各自少输(缩小到=水上,绿)
@@ -817,7 +827,7 @@ document.getElementById('settleConfirm').onclick=()=>{
   else { finalizeSave(ps, adj.newNets); closeSettle(); uiAlert('已按比例分摊并保存 ✓'); }
 };
 document.getElementById('settleNowBtn').onclick=()=>{
-  if(!isHost()) return;
+  if(!canEdit()) return;
   const ps=game.players||[];
   const adj=adjustedNets(ps);
   if(!adj.diff){ uiAlert('账目已经平了，无需分摊'); return; }
@@ -830,7 +840,7 @@ document.getElementById('settleRaw').onclick=()=>{
 };
 
 document.getElementById('saveSession').onclick=()=>{
-  if(!isHost()) return;
+  if(!canEdit()) return;
   const ps=game.players||[];
   if(ps.length===0){ uiAlert('本局还没有玩家'); return; }
   if(splitValid()){
@@ -842,7 +852,7 @@ document.getElementById('saveSession').onclick=()=>{
   openSettle(ps, adj);
 };
 document.getElementById('clearSession').onclick=async ()=>{
-  if(!isHost()) return;
+  if(!canEdit()) return;
   if(!(await uiConfirm('取消本局？（不会保存到历史）',{danger:true}))) return;
   gameRef.remove(); game=null; lastMode='start'; renderLedger();
 };
@@ -895,14 +905,15 @@ document.getElementById('playerOverlay').onclick=e=>{ if(e.target.id==='playerOv
 document.getElementById('pdDel').onclick=async ()=>{
   if(!pdTarget) return;
   if(await uiConfirm('确定删除常用玩家「'+pdTarget+'」？\n（历史记录里的数据不受影响）',{danger:true})){
-    rosterRef.set(roster.filter(x=>x!==pdTarget));
+    rosterRef.transaction(cur=>rosterArr(cur).filter(x=>x!==pdTarget));
     closePlayerDetail();
   }
 };
 document.getElementById('addRoster').onclick=()=>{
   const inp=document.getElementById('newName'); const n=inp.value.trim(); if(!n) return;
   if(roster.includes(n)){ uiAlert('已存在'); return; }
-  rosterRef.set([...roster, n]); inp.value='';
+  rosterRef.transaction(cur=>{ const a=rosterArr(cur); if(!a.includes(n)) a.push(n); return a; });
+  inp.value='';
 };
 document.getElementById('newName').addEventListener('keydown', e=>{ if(e.key==='Enter') document.getElementById('addRoster').click(); });
 
@@ -936,18 +947,18 @@ db.ref('.info/connected').on('value', s=>{
 let lastMode=null;
 gameRef.on('value', snap=>{
   const val=snap.val();
-  const incoming = !val ? 'start' : (val.ownerId===myId ? 'host' : 'viewer');
-  // 自己作为房主时，忽略自己写入的回声，避免覆盖正在编辑的本地数据
-  if(incoming==='host' && lastMode==='host'){ return; }
+  const iCanEdit = !!val && (val.ownerId===myId || isAdmin());
+  // 自己作为编辑者（房主/管理员）时，忽略自身写入的回声，避免打断正在编辑的输入
+  if(iCanEdit && lastMode==='edit'){ return; }
   game = val;
   if(game && !game.players) game.players=[];
-  lastMode = gameMode();
+  lastMode = iCanEdit ? 'edit' : (val ? 'view' : 'start');
   renderLedger();
 });
+function rosterArr(cur){ return Array.isArray(cur) ? cur.filter(x=>x!=null) : (cur ? Object.keys(cur).map(k=>cur[k]) : []); }
 rosterRef.on('value', snap=>{
-  const v=snap.val();
-  roster = !v ? [] : (Array.isArray(v) ? v.filter(x=>x!=null) : Object.keys(v).map(k=>v[k]));
-  renderRoster(); if(isHost()) renderAddPick();
+  roster = [...new Set(rosterArr(snap.val()))];
+  renderRoster(); if(canEdit()) renderAddPick();
 });
 sessionsRef.on('value', snap=>{
   const v=snap.val()||{};
@@ -955,6 +966,28 @@ sessionsRef.on('value', snap=>{
   renderHistory();
 });
 renderRoster(); renderHistory();
+
+// ---- 管理员入口 ----
+function updateAdminUI(){
+  const b=document.getElementById('adminBtn');
+  if(b){ b.classList.toggle('on', isAdmin()); b.textContent = isAdmin()?'🔧 管理员':'🔧'; }
+}
+document.getElementById('adminBtn').onclick=async ()=>{
+  if(isAdmin()){
+    if(!(await uiConfirm('退出管理员模式？'))) return;
+    localStorage.removeItem('poker_admin');
+  } else {
+    const pw=await uiPrompt('请输入管理员密码');
+    if(pw==null) return;
+    if(pw!==ADMIN_PASSWORD){ uiAlert('密码不正确'); return; }
+    localStorage.setItem('poker_admin','1');
+    uiAlert('已进入管理员模式，可管理任意进行中的牌局');
+  }
+  updateAdminUI();
+  lastMode = (game && (game.ownerId===myId || isAdmin())) ? 'edit' : (game ? 'view' : 'start');
+  renderLedger();
+};
+updateAdminUI();
 
 /* =========================================================
    三、标签切换
