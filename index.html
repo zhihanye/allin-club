@@ -610,7 +610,7 @@ function renderLedger(){
     ? '<th>姓名</th><th>带入(手)</th><th>带出</th><th>输赢</th><th>分摊后</th><th></th>'
     : '<th>姓名</th><th>带入(手)</th><th>带出</th><th>输赢</th><th></th>';
   const d=document.getElementById('ledDate'), ph=document.getElementById('perHand');
-  d.value=game.date||''; ph.value=game.perHand; d.disabled=!host; ph.disabled=!host;
+  d.value=game.date||''; ph.value=game.perHand; d.disabled=!editable; ph.disabled=!editable;
   const tb=document.getElementById('ledBody'); tb.innerHTML='';
   (game.players||[]).forEach((p,i)=>{
     const tr=document.createElement('tr');
