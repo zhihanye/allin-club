@@ -946,13 +946,13 @@ db.ref('.info/connected').on('value', s=>{
 });
 let lastMode=null;
 gameRef.on('value', snap=>{
-  const val=snap.val();
-  const iCanEdit = !!val && (val.ownerId===myId || isAdmin());
-  // 自己作为编辑者（房主/管理员）时，忽略自身写入的回声，避免打断正在编辑的输入
-  if(iCanEdit && lastMode==='edit'){ return; }
-  game = val;
+  game = snap.val();
   if(game && !game.players) game.players=[];
-  lastMode = iCanEdit ? 'edit' : (val ? 'view' : 'start');
+  // 始终按云端最新渲染（多设备/多编辑者实时同步）；
+  // 只在“正在表内输入框打字”时跳过整表重渲染，避免打断输入（仍更新合计）
+  const ae=document.activeElement;
+  const typing = !!ae && ((ae.classList && ae.classList.contains('cash-in')) || ae.id==='perHand' || ae.id==='ledDate');
+  if(typing){ updateAllNets(); return; }
   renderLedger();
 });
 function rosterArr(cur){ return Array.isArray(cur) ? cur.filter(x=>x!=null) : (cur ? Object.keys(cur).map(k=>cur[k]) : []); }
